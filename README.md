@@ -23,7 +23,7 @@ Depois de iniciar, digite o nome do restaurante e use o menu numerado para naveg
 | `Pedido` | itens pedidos em uma mesa e cálculo do total |
 | `Restaurante` | classe central que guarda tudo em dicionários e oferece os métodos de cadastro/busca |
 
-Erros de regra de negócio (ex.: mesa já ocupada, ID inexistente, entrada inválida) são tratados com exceções próprias, derivadas de `RestauranteError`, então o programa nunca trava — sempre mostra uma mensagem de erro e volta ao menu.
+Erros de regra de negócio (ex.: mesa já ocupada, ID inexistente, entrada inválida) são tratados com exceções próprias, derivadas de `RestauranteError`, então o programa nunca trava, sempre mostra uma mensagem de erro e volta ao menu.
 
 
 
