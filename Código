@@ -1,0 +1,502 @@
+class RestauranteError(Exception):
+    """Classe base para todos os erros do sistema do restaurante."""
+    pass
+
+
+class MesaOcupadaError(RestauranteError):
+    """Lançada ao tentar ocupar uma mesa que já está em uso."""
+    pass
+
+
+class MesaNaoEncontradaError(RestauranteError):
+    """Lançada quando uma mesa não é encontrada pelo número."""
+    pass
+
+
+class PratoNaoEncontradoError(RestauranteError):
+    """Lançada quando um prato não é encontrado pelo ID."""
+    pass
+
+
+class FuncionarioNaoEncontradoError(RestauranteError):
+    """Lançada quando um funcionário não é encontrado pelo ID."""
+    pass
+
+
+class PedidoNaoEncontradoError(RestauranteError):
+    """Lançada quando um pedido não é encontrado pelo ID."""
+    pass
+
+
+class EntradaInvalidaError(RestauranteError):
+    """Lançada quando o usuário fornece uma entrada inválida."""
+    pass
+
+
+# ============================================================
+# CLASSES DO DOMÍNIO (POO)
+# ============================================================
+
+class Ingrediente:
+    """Representa um ingrediente usado em um ou mais pratos."""
+
+    def __init__(self, nome, quantidade_estoque, unidade="kg"):
+        self.nome = nome
+        self.quantidade_estoque = quantidade_estoque
+        self.unidade = unidade
+
+    def __str__(self):
+        return f"{self.nome} ({self.quantidade_estoque}{self.unidade} em estoque)"
+
+
+class Prato:
+    """Representa um item do cardápio."""
+
+    _proximo_id = 1  # atributo de classe: gera os IDs automaticamente
+
+    def __init__(self, nome, preco, categoria, ingredientes=None):
+        self.id = Prato._proximo_id
+        Prato._proximo_id += 1
+        self.nome = nome
+        self.preco = preco
+        self.categoria = categoria
+        # lista de objetos Ingrediente associados a este prato
+        self.ingredientes = ingredientes if ingredientes is not None else []
+
+    def adicionar_ingrediente(self, ingrediente):
+        self.ingredientes.append(ingrediente)
+
+    def __str__(self):
+        nomes_ingredientes = ", ".join(i.nome for i in self.ingredientes) or "Nenhum"
+        return (f"#{self.id} | {self.nome:<22} | R$ {self.preco:>7.2f} | "
+                f"{self.categoria:<14} | Ingredientes: {nomes_ingredientes}")
+
+
+class Funcionario:
+    """Representa um funcionário do restaurante."""
+
+    _proximo_id = 1
+
+    def __init__(self, nome, cargo, salario):
+        self.id = Funcionario._proximo_id
+        Funcionario._proximo_id += 1
+        self.nome = nome
+        self.cargo = cargo
+        self.salario = salario
+
+    def __str__(self):
+        return f"#{self.id} | {self.nome:<22} | {self.cargo:<15} | R$ {self.salario:>9.2f}"
+
+
+class Mesa:
+    """Representa uma mesa do restaurante."""
+
+    def __init__(self, numero, capacidade):
+        self.numero = numero
+        self.capacidade = capacidade
+        self.ocupada = False
+
+    def ocupar(self):
+        if self.ocupada:
+            raise MesaOcupadaError(f"A mesa {self.numero} já está ocupada.")
+        self.ocupada = True
+
+    def liberar(self):
+        self.ocupada = False
+
+    def __str__(self):
+        status = "OCUPADA" if self.ocupada else "LIVRE"
+        return f"Mesa {self.numero:<3} | Capacidade: {self.capacidade:<3} | Status: {status}"
+
+
+class Pedido:
+    """Representa um pedido feito em uma mesa."""
+
+    _proximo_id = 1
+
+    def __init__(self, mesa):
+        self.id = Pedido._proximo_id
+        Pedido._proximo_id += 1
+        self.mesa = mesa
+        self.itens = []      # lista de dicionários: {"prato": Prato, "quantidade": int}
+        self.status = "Aberto"
+
+    def adicionar_item(self, prato, quantidade=1):
+        if quantidade <= 0:
+            raise EntradaInvalidaError("A quantidade deve ser maior que zero.")
+        self.itens.append({"prato": prato, "quantidade": quantidade})
+
+    def calcular_total(self):
+        return sum(item["prato"].preco * item["quantidade"] for item in self.itens)
+
+    def fechar(self):
+        self.status = "Fechado"
+        self.mesa.liberar()
+
+    def __str__(self):
+        linhas = [f"Pedido #{self.id} | Mesa {self.mesa.numero} | Status: {self.status}"]
+        if not self.itens:
+            linhas.append("  (nenhum item adicionado)")
+        for item in self.itens:
+            subtotal = item["prato"].preco * item["quantidade"]
+            linhas.append(f"  {item['quantidade']}x {item['prato'].nome:<20} R$ {subtotal:>8.2f}")
+        linhas.append(f"  {'TOTAL:':<25}R$ {self.calcular_total():>8.2f}")
+        return "\n".join(linhas)
+
+
+# ============================================================
+# CLASSE PRINCIPAL: RESTAURANTE
+# ============================================================
+
+class Restaurante:
+    """
+    Classe principal que agrega todas as outras entidades
+    (funcionários, pratos, mesas e pedidos) e oferece os
+    métodos de negócio do sistema.
+    """
+
+    def __init__(self, nome):
+        self.nome = nome
+        self.funcionarios = {}   # dict: {id: Funcionario}
+        self.cardapio = {}       # dict: {id: Prato}
+        self.mesas = {}          # dict: {numero: Mesa}
+        self.pedidos = {}        # dict: {id: Pedido}
+
+    # ---------------- FUNCIONÁRIOS ----------------
+    def cadastrar_funcionario(self, nome, cargo, salario):
+        funcionario = Funcionario(nome, cargo, salario)
+        self.funcionarios[funcionario.id] = funcionario
+        return funcionario
+
+    def listar_funcionarios(self):
+        return list(self.funcionarios.values())
+
+    def remover_funcionario(self, id_funcionario):
+        if id_funcionario not in self.funcionarios:
+            raise FuncionarioNaoEncontradoError(f"Funcionário #{id_funcionario} não encontrado.")
+        del self.funcionarios[id_funcionario]
+
+    # ---------------- CARDÁPIO / PRATOS ----------------
+    def cadastrar_prato(self, nome, preco, categoria, ingredientes=None):
+        prato = Prato(nome, preco, categoria, ingredientes)
+        self.cardapio[prato.id] = prato
+        return prato
+
+    def listar_cardapio(self):
+        return list(self.cardapio.values())
+
+    def buscar_prato(self, id_prato):
+        if id_prato not in self.cardapio:
+            raise PratoNaoEncontradoError(f"Prato #{id_prato} não encontrado.")
+        return self.cardapio[id_prato]
+
+    def remover_prato(self, id_prato):
+        if id_prato not in self.cardapio:
+            raise PratoNaoEncontradoError(f"Prato #{id_prato} não encontrado.")
+        del self.cardapio[id_prato]
+
+    # ---------------- MESAS ----------------
+    def cadastrar_mesa(self, numero, capacidade):
+        if numero in self.mesas:
+            raise EntradaInvalidaError(f"Já existe uma mesa com o número {numero}.")
+        mesa = Mesa(numero, capacidade)
+        self.mesas[numero] = mesa
+        return mesa
+
+    def listar_mesas(self):
+        return list(self.mesas.values())
+
+    def buscar_mesa(self, numero):
+        if numero not in self.mesas:
+            raise MesaNaoEncontradaError(f"Mesa {numero} não encontrada.")
+        return self.mesas[numero]
+
+    # ---------------- PEDIDOS ----------------
+    def abrir_pedido(self, numero_mesa):
+        mesa = self.buscar_mesa(numero_mesa)
+        mesa.ocupar()  # lança MesaOcupadaError se a mesa já estiver ocupada
+        pedido = Pedido(mesa)
+        self.pedidos[pedido.id] = pedido
+        return pedido
+
+    def buscar_pedido(self, id_pedido):
+        if id_pedido not in self.pedidos:
+            raise PedidoNaoEncontradoError(f"Pedido #{id_pedido} não encontrado.")
+        return self.pedidos[id_pedido]
+
+    def listar_pedidos(self, apenas_abertos=False):
+        pedidos = list(self.pedidos.values())
+        if apenas_abertos:
+            pedidos = [p for p in pedidos if p.status == "Aberto"]
+        return pedidos
+
+    def fechar_pedido(self, id_pedido):
+        pedido = self.buscar_pedido(id_pedido)
+        pedido.fechar()
+        return pedido
+
+    def faturamento_total(self):
+        return sum(p.calcular_total() for p in self.pedidos.values() if p.status == "Fechado")
+
+
+# ============================================================
+# FUNÇÕES AUXILIARES DE ENTRADA (com tratamento de erros)
+# ============================================================
+
+def ler_texto(mensagem):
+    valor = input(mensagem).strip()
+    if not valor:
+        raise EntradaInvalidaError("O campo não pode ficar em branco.")
+    return valor
+
+
+def ler_float(mensagem):
+    try:
+        return float(input(mensagem).strip().replace(",", "."))
+    except ValueError:
+        raise EntradaInvalidaError("Valor numérico inválido. Use apenas números.")
+
+
+def ler_int(mensagem):
+    try:
+        return int(input(mensagem).strip())
+    except ValueError:
+        raise EntradaInvalidaError("Valor inteiro inválido. Digite apenas números.")
+
+
+def pausar():
+    input("\nPressione ENTER para continuar...")
+
+
+# ============================================================
+# MENUS DO SISTEMA (console)
+# ============================================================
+
+def menu_funcionarios(restaurante):
+    while True:
+        print("\n--- GESTÃO DE FUNCIONÁRIOS ---")
+        print("1. Cadastrar funcionário")
+        print("2. Listar funcionários")
+        print("3. Remover funcionário")
+        print("0. Voltar")
+        opcao = input("Escolha uma opção: ").strip()
+
+        try:
+            if opcao == "1":
+                nome = ler_texto("Nome: ")
+                cargo = ler_texto("Cargo: ")
+                salario = ler_float("Salário: R$ ")
+                func = restaurante.cadastrar_funcionario(nome, cargo, salario)
+                print(f"Funcionário cadastrado com sucesso! {func}")
+
+            elif opcao == "2":
+                funcionarios = restaurante.listar_funcionarios()
+                if not funcionarios:
+                    print("Nenhum funcionário cadastrado.")
+                else:
+                    for f in funcionarios:
+                        print(f)
+
+            elif opcao == "3":
+                id_func = ler_int("ID do funcionário a remover: ")
+                restaurante.remover_funcionario(id_func)
+                print("Funcionário removido com sucesso!")
+
+            elif opcao == "0":
+                break
+            else:
+                print("Opção inválida!")
+
+        except RestauranteError as e:
+            print(f"Erro: {e}")
+
+        pausar()
+
+
+def menu_cardapio(restaurante):
+    while True:
+        print("\n--- GESTÃO DO CARDÁPIO ---")
+        print("1. Cadastrar prato")
+        print("2. Listar cardápio")
+        print("3. Remover prato")
+        print("0. Voltar")
+        opcao = input("Escolha uma opção: ").strip()
+
+        try:
+            if opcao == "1":
+                nome = ler_texto("Nome do prato: ")
+                preco = ler_float("Preço: R$ ")
+                categoria = ler_texto("Categoria (ex: Prato Principal, Bebida, Sobremesa): ")
+
+                ingredientes = []
+                qtd_ing = ler_int("Quantos ingredientes deseja cadastrar para este prato? ")
+                for _ in range(qtd_ing):
+                    nome_ing = ler_texto("  Nome do ingrediente: ")
+                    qtd_ing_estoque = ler_float("  Quantidade disponível: ")
+                    unidade = ler_texto("  Unidade (kg, g, l, un...): ")
+                    ingredientes.append(Ingrediente(nome_ing, qtd_ing_estoque, unidade))
+
+                prato = restaurante.cadastrar_prato(nome, preco, categoria, ingredientes)
+                print(f"Prato cadastrado com sucesso! {prato}")
+
+            elif opcao == "2":
+                pratos = restaurante.listar_cardapio()
+                if not pratos:
+                    print("Nenhum prato cadastrado.")
+                else:
+                    for p in pratos:
+                        print(p)
+
+            elif opcao == "3":
+                id_prato = ler_int("ID do prato a remover: ")
+                restaurante.remover_prato(id_prato)
+                print("Prato removido com sucesso!")
+
+            elif opcao == "0":
+                break
+            else:
+                print("Opção inválida!")
+
+        except RestauranteError as e:
+            print(f"Erro: {e}")
+
+        pausar()
+
+
+def menu_mesas(restaurante):
+    while True:
+        print("\n--- GESTÃO DE MESAS ---")
+        print("1. Cadastrar mesa")
+        print("2. Listar mesas")
+        print("0. Voltar")
+        opcao = input("Escolha uma opção: ").strip()
+
+        try:
+            if opcao == "1":
+                numero = ler_int("Número da mesa: ")
+                capacidade = ler_int("Capacidade (nº de pessoas): ")
+                mesa = restaurante.cadastrar_mesa(numero, capacidade)
+                print(f"Mesa cadastrada com sucesso! {mesa}")
+
+            elif opcao == "2":
+                mesas = restaurante.listar_mesas()
+                if not mesas:
+                    print("Nenhuma mesa cadastrada.")
+                else:
+                    for m in mesas:
+                        print(m)
+
+            elif opcao == "0":
+                break
+            else:
+                print("Opção inválida!")
+
+        except RestauranteError as e:
+            print(f"Erro: {e}")
+
+        pausar()
+
+
+def menu_pedidos(restaurante):
+    while True:
+        print("\n--- GESTÃO DE PEDIDOS ---")
+        print("1. Abrir novo pedido")
+        print("2. Adicionar item a um pedido")
+        print("3. Listar pedidos")
+        print("4. Fechar pedido (gerar conta)")
+        print("0. Voltar")
+        opcao = input("Escolha uma opção: ").strip()
+
+        try:
+            if opcao == "1":
+                numero_mesa = ler_int("Número da mesa: ")
+                pedido = restaurante.abrir_pedido(numero_mesa)
+                print(f"Pedido #{pedido.id} aberto na mesa {numero_mesa}.")
+
+            elif opcao == "2":
+                id_pedido = ler_int("ID do pedido: ")
+                pedido = restaurante.buscar_pedido(id_pedido)
+
+                print("\nCardápio disponível:")
+                for prato in restaurante.listar_cardapio():
+                    print(prato)
+
+                id_prato = ler_int("\nID do prato a adicionar: ")
+                prato = restaurante.buscar_prato(id_prato)
+                quantidade = ler_int("Quantidade: ")
+                pedido.adicionar_item(prato, quantidade)
+                print(f"{quantidade}x {prato.nome} adicionado(s) ao pedido #{pedido.id}.")
+
+            elif opcao == "3":
+                resposta = input("Mostrar apenas pedidos abertos? (s/n): ").strip().lower()
+                apenas_abertos = resposta == "s"
+                pedidos = restaurante.listar_pedidos(apenas_abertos)
+                if not pedidos:
+                    print("Nenhum pedido encontrado.")
+                else:
+                    for p in pedidos:
+                        print(p)
+                        print("-" * 40)
+
+            elif opcao == "4":
+                id_pedido = ler_int("ID do pedido a fechar: ")
+                pedido = restaurante.fechar_pedido(id_pedido)
+                print("\nConta fechada:")
+                print(pedido)
+
+            elif opcao == "0":
+                break
+            else:
+                print("Opção inválida!")
+
+        except RestauranteError as e:
+            print(f"Erro: {e}")
+
+        pausar()
+
+
+def menu_relatorios(restaurante):
+    print("\n--- RELATÓRIO GERAL ---")
+    print(f"Total de funcionários: {len(restaurante.funcionarios)}")
+    print(f"Total de pratos no cardápio: {len(restaurante.cardapio)}")
+    print(f"Total de mesas: {len(restaurante.mesas)}")
+    print(f"Pedidos abertos: {len(restaurante.listar_pedidos(apenas_abertos=True))}")
+    print(f"Faturamento total (pedidos fechados): R$ {restaurante.faturamento_total():.2f}")
+    pausar()
+
+
+def menu_principal():
+    print("=" * 50)
+    nome_restaurante = input("Digite o nome do seu restaurante: ").strip() or "Meu Restaurante"
+    restaurante = Restaurante(nome_restaurante)
+    print(f"\nBem-vindo ao sistema de gestão do '{restaurante.nome}'!")
+
+    while True:
+        print(f"\n===== {restaurante.nome.upper()} - MENU PRINCIPAL =====")
+        print("1. Gerenciar Funcionários")
+        print("2. Gerenciar Cardápio (Pratos)")
+        print("3. Gerenciar Mesas")
+        print("4. Gerenciar Pedidos")
+        print("5. Relatório Geral")
+        print("0. Sair")
+        opcao = input("Escolha uma opção: ").strip()
+
+        if opcao == "1":
+            menu_funcionarios(restaurante)
+        elif opcao == "2":
+            menu_cardapio(restaurante)
+        elif opcao == "3":
+            menu_mesas(restaurante)
+        elif opcao == "4":
+            menu_pedidos(restaurante)
+        elif opcao == "5":
+            menu_relatorios(restaurante)
+        elif opcao == "0":
+            print("Encerrando o sistema. Até logo!")
+            break
+        else:
+            print("Opção inválida! Tente novamente.")
+
+
+if __name__ == "__main__":
+    menu_principal()
